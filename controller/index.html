@@ -1,0 +1,952 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Robot">
+<meta name="theme-color" content="#F54128">
+<title>Robot Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+<style>
+  /* Font LL Autoscape: mettete il file del font (con licenza) nella stessa cartella
+     con il nome LLAutoscape-Regular.woff2. Se manca, si usa Space Grotesk. */
+  @font-face {
+    font-family: "LL Autoscape";
+    src: local("LL Autoscape"), local("LLAutoscape-Regular"),
+         url("LLAutoscape-Regular.woff2") format("woff2"),
+         url("LLAutoscape-Regular.woff") format("woff"),
+         url("LLAutoscape-Regular.otf") format("opentype");
+    font-display: swap;
+  }
+
+  :root{
+    --o:#F54128;   /* arancio */
+    --k:#000000;   /* nero */
+    --w:#FFFFFF;   /* bianco */
+    --font:"LL Autoscape","Space Grotesk",system-ui,sans-serif;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--o)}
+  body{
+    overflow:hidden; overscroll-behavior:none;
+    font-family:var(--font); color:var(--k);
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    touch-action:manipulation;
+  }
+  button{font-family:inherit; outline:none; -webkit-appearance:none; appearance:none; color:inherit}
+  button:focus, button:focus-visible{outline:none}
+
+  /* =========================================================
+     AREA DI GIOCO: tutto lo schermo (rispettando notch e bordi dell'iPhone)
+     ========================================================= */
+  .app{
+    position:fixed;
+    top:env(safe-area-inset-top); right:env(safe-area-inset-right);
+    bottom:env(safe-area-inset-bottom); left:env(safe-area-inset-left);
+    container-type:size;
+  }
+  .app *{
+    --m:     clamp(12px, 3.2cqmin, 30px);                      /* margine dai bordi */
+    --btn:   clamp(44px, min(12cqmin, 7.5cqw), 96px);          /* pulsanti tondi in alto */
+    --edge:  calc(var(--m) + var(--btn) * .1);                 /* distanza dal bordo di lettera e scritte in basso */
+    --top:   calc(var(--m) * 1.8 + var(--btn) * 1.5);          /* sotto la lettera */
+    --fs:    clamp(12px, min(3.6cqh, 2.1cqw), 16px);           /* testo */
+    --ptop:  calc(var(--m) * 3 + var(--btn) * 1.53);         /* inizio del pannello: più staccato dalla lettera */
+    --status:calc(var(--edge) + var(--fs) * 1.3 + var(--m) * .3);  /* spazio riservato alla riga in basso */
+    --len:   max(120px, min(calc(100cqh - var(--top) - var(--status) - var(--m)), 38cqw, 480px));
+    --thk:   calc(var(--len) * .42);
+    --mid-y: calc((100cqh + var(--top) - var(--status)) / 2);
+    --h:     clamp(25px, min(6.6cqh, 5cqw), 46px);             /* altezza pulsanti rettangolari */
+    --g:     clamp(4px, 1.1cqmin, 10px);                       /* spazio tra pulsanti */
+    --rows:  2;                                                /* righe delle strisce del display */
+    --tile:  clamp(26px, min(7.7cqh, 4.6cqw), 60px);               /* tessere del display */
+    --cell:  clamp(20px, min(6.2cqh, 4cqw), 46px);               /* griglia per disegnare */
+  }
+
+  /* ---------- in alto: [regolazioni]   A   [bluetooth] ---------- */
+  .round{
+    position:absolute; top:var(--m);
+    width:var(--btn); height:var(--btn); border-radius:50%;
+    border:0; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--k);
+    transition:background .2s, color .2s, transform .08s;
+  }
+  .round svg{width:60%; height:60%; overflow:visible}
+  .title{cursor:pointer}
+  .round:active{transform:scale(.9)}
+  .set{left:var(--m)}
+  .bt{right:var(--m)}
+  .app[data-bt="wait"] .bt svg{animation:blink .7s steps(2) infinite}
+  .app[data-bt="on"] .bt,
+  .app.panel-open .set{background:var(--k); color:var(--o)}
+  @keyframes blink{50%{opacity:.25}}
+
+  .title{
+    position:absolute; left:50%; top:calc(var(--m) + var(--btn) * .8);
+    transform:translate(-50%,-50%);
+    margin:0; font-size:calc(var(--btn) * 1.95); line-height:1; font-weight:700;
+  }
+
+  /* ---------- in basso: messaggi e avvisi, stesso margine della lettera ---------- */
+  .status{
+    position:absolute; left:50%; bottom:calc(var(--edge) - 2px); transform:translateX(-50%);
+    margin:0; width:max-content; max-width:calc(100% - 2 * var(--m) - 2 * var(--btn));
+    text-align:center; font-size:var(--fs); line-height:1.25;
+    transition:opacity .2s;
+  }
+  .status:empty{opacity:0}
+
+  /* ---------- levette a pillola (gas a sinistra o a destra) ---------- */
+  .zone{position:absolute; top:var(--top); bottom:0; width:50%; touch-action:none; cursor:grab}
+  .zone:active{cursor:grabbing}
+  .zone.gas{left:0} .zone.ste{right:0}
+  .app.mancino .zone.gas{left:auto; right:0}
+  .app.mancino .zone.ste{right:auto; left:0}
+  .track{
+    position:absolute; top:var(--mid-y);
+    border-radius:999px;
+    border:calc(var(--thk) * .14) solid var(--k); background:var(--o);
+    transform:translate(-50%,-50%); pointer-events:none;
+  }
+  .track.v{left:25%; width:var(--thk); height:var(--len)}
+  .track.h{left:75%; width:var(--len); height:var(--thk)}
+  .app.mancino .track.v{left:75%}
+  .app.mancino .track.h{left:25%}
+  .knob{
+    position:absolute; left:50%; top:50%;
+    width:calc(var(--thk) * .58); height:calc(var(--thk) * .58);
+    border-radius:50%; background:var(--k);
+    transform:translate(-50%,-50%); transition:transform .14s ease-out;
+  }
+  .knob.drag{transition:none}
+
+  /* ---------- centro: distanza dall'ostacolo ---------- */
+  .dist{
+    position:absolute; left:50%; top:var(--mid-y); transform:translate(-50%,-50%);
+    display:none; flex-direction:column; align-items:center; gap:4px; pointer-events:none;
+  }
+  .app.has-dist .dist{display:flex}
+  .dist small{font-size:var(--fs)}
+  .dist b{font-size:calc(var(--btn) * .62); line-height:1; font-weight:700; padding:0 .15em}
+  .dist.near b{background:var(--k); color:var(--o)}
+
+  /* ---------- pannello regolazioni ---------- */
+  .panel{
+    position:absolute; left:var(--m); right:var(--m); top:var(--ptop); bottom:var(--status);
+    display:none; flex-direction:column; gap:calc(var(--m) * 1.7);
+  }
+  .app.panel-open .panel{display:flex}
+  .app.panel-open .zone,
+  .app.panel-open .track,
+  .app.panel-open .dist{display:none}
+
+  /* pulsanti rettangolari: bianchi con testo nero; selezionati neri con testo arancio */
+  .b{
+    min-width:0; height:var(--h); padding:0 calc(var(--g) * 1.2); border:0; border-radius:0; cursor:pointer;
+    font-size:var(--fs); line-height:1.1; letter-spacing:0; text-align:center;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    background:var(--w); color:var(--k);
+    display:flex; align-items:center; justify-content:center;
+    transition:background .12s, color .12s, transform .08s;
+  }
+  .b:active{transform:scale(.96)}
+  .b.sel{background:var(--k); color:var(--o)}
+
+  .tabs{display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--g); width:min(100%, 640px); margin:0 auto; flex:none}
+
+  .content{flex:1; min-height:0; overflow:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch}
+  .page{display:none; width:min(100%, 1000px); margin:0 auto}
+  .page.sel{display:flex; flex-direction:column; gap:calc(var(--m) * 1.1)}
+  .sec{display:flex; flex-direction:column; gap:calc(var(--g) * 1.2); min-width:0}
+  .sec h3{margin:0; font-size:var(--fs); font-weight:700; line-height:1.1}
+  .grid{display:grid; gap:calc(var(--g) * .8)}
+  .g6{grid-template-columns:repeat(6, minmax(0, 1fr))}
+  .g14{grid-template-columns:repeat(14, minmax(0, 1fr))}
+
+  /* colori dei fari */
+  .sw{
+    position:relative; height:var(--h); border:0; border-radius:0; padding:0; cursor:pointer;
+    transition:transform .08s;
+  }
+  .sw:active{transform:scale(.92)}
+  .sw.sel::after{content:""; position:absolute; left:50%; top:50%; width:30%; aspect-ratio:1; transform:translate(-50%,-50%); background:var(--k)}
+  .sw.dark.sel::after{background:var(--w)}
+  .sw.custom{background:conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); overflow:hidden}
+  .sw.custom input{position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; border:0; padding:0}
+
+  /* display: tutto in una schermata, due colonne */
+  #page-display{width:100%}
+  #page-display.sel{display:grid; grid-template-columns:1fr auto; column-gap:calc(var(--g) * 4); align-items:start}
+  .col{display:flex; flex-direction:column; gap:calc(var(--g) * 1.6); min-width:0}
+  .tiles{
+    display:grid; grid-template-rows:repeat(var(--rows), var(--tile)); grid-auto-columns:var(--tile);
+    gap:calc(var(--g) * .9); overflow-x:auto; overflow-y:hidden; touch-action:pan-x;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none; overscroll-behavior-x:contain;
+  }
+  .tiles::-webkit-scrollbar{display:none}
+  @container (min-height: 640px){ .app * { --rows: 3 } }
+  .tiles.more{-webkit-mask-image:linear-gradient(to right, #000 88%, transparent); mask-image:linear-gradient(to right, #000 88%, transparent)}
+  .tile{
+    width:100%; aspect-ratio:1; border:0; border-radius:0; cursor:pointer;
+    padding:16%; background:var(--w);
+    display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(5,1fr);
+    gap:5%; transition:transform .08s;
+  }
+  .tile:active{transform:scale(.9)}
+  .tile i{border-radius:50%; background:rgba(0,0,0,.1)}
+  .tile i.on{background:var(--k)}
+  .tile.sel{background:var(--k)}
+  .tile.sel i{background:rgba(245,65,40,.25)}
+  .tile.sel i.on{background:var(--o)}
+  .draw{display:grid; grid-template-columns:repeat(5, var(--cell)); gap:calc(var(--g) * .7)}
+  .cell{width:var(--cell); height:var(--cell); border:0; border-radius:0; padding:0; cursor:pointer; background:var(--w)}
+  .cell.on{background:var(--k)}
+  .col .b{align-self:stretch}
+
+  /* impostazioni */
+  #page-imp.sel{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); max-width:960px; gap:calc(var(--g) * 1.8) calc(var(--g) * 4); align-content:start}
+  @container (max-width: 620px){ #page-imp.sel{grid-template-columns:repeat(2, minmax(0, 1fr))} }
+  .seg .b{padding:0 8px}
+  .seg{display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0, 1fr); gap:var(--g)}
+  .credits{
+    display:none; position:absolute; left:var(--m); bottom:calc(var(--m) + 1px);
+    margin:0; max-width:calc(100% - 2 * var(--m)); font-size:calc(var(--fs) * .85); line-height:1.25;
+  }
+  .app.panel-open.tab-imp .credits{display:block}
+  .app.panel-open.tab-imp .status{display:none}
+
+  /* ---------- telefono in verticale: chiediamo di girarlo ---------- */
+  .rotate{
+    display:none; position:fixed; inset:0;
+    flex-direction:column; align-items:center; justify-content:center; gap:24px;
+    font-size:18px; text-align:center;
+  }
+  .rotate svg{width:96px; height:96px}
+  @media (orientation: portrait) and (max-width: 600px){
+    .app{display:none}
+    .rotate{display:flex}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important}
+    .app[data-bt="wait"] .bt svg{animation:none; opacity:.5}
+  }
+</style>
+</head>
+<body>
+
+<div class="app" id="app" data-bt="off">
+
+  <!-- in alto a sinistra: regolazioni -->
+  <button class="round set" id="set" aria-label="Regolazioni" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="square" aria-hidden="true">
+      <path d="M3 6h18M3 12h18M3 18h18"/>
+      <circle cx="8" cy="6" r="2.4" fill="currentColor" stroke="none"/>
+      <circle cx="16" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+      <circle cx="10" cy="18" r="2.4" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+
+  <!-- lettera del giocatore (la manda il robot) -->
+  <h1 class="title" id="letter" aria-live="polite">A</h1>
+
+  <!-- in alto a destra: Bluetooth -->
+  <button class="round bt" id="bt" aria-label="Collega Bluetooth">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+         stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+      <path d="M6 7l12 10-6 5V2l6 5L6 17"/>
+    </svg>
+  </button>
+
+  <!-- levetta gas: avanti / indietro -->
+  <div class="zone gas" id="zoneGas" aria-label="Avanti e indietro"></div>
+  <div class="track v" id="trackGas"><div class="knob" id="knobGas"></div></div>
+
+  <!-- levetta sterzo: sinistra / destra -->
+  <div class="zone ste" id="zoneSte" aria-label="Sterzo"></div>
+  <div class="track h" id="trackSte"><div class="knob" id="knobSte"></div></div>
+
+  <!-- centro: distanza dall'ostacolo -->
+  <div class="dist" id="dist"><small>Ostacolo</small><b id="distVal">–</b></div>
+
+  <!-- pannello regolazioni -->
+  <div class="panel" id="panel">
+    <div class="tabs" role="tablist">
+      <button class="b sel" role="tab" data-tab="fari">Fari</button>
+      <button class="b" role="tab" data-tab="musica">Musica</button>
+      <button class="b" role="tab" data-tab="display">Display</button>
+      <button class="b" role="tab" data-tab="imp">Impostazioni</button>
+    </div>
+    <div class="content">
+      <div class="page sel" id="page-fari">
+        <div class="sec"><h3>Colore</h3><div class="grid g14" id="colors"></div></div>
+        <div class="sec"><h3>Effetto</h3><div class="grid g6" id="effects"></div></div>
+      </div>
+
+      <div class="page" id="page-musica">
+        <div class="sec"><h3>Canzoni</h3><div class="grid g6" id="songs"></div></div>
+        <div class="sec"><h3>Effetti sonori</h3><div class="grid g6" id="sounds"></div></div>
+      </div>
+
+      <div class="page" id="page-display">
+        <div class="col">
+          <div class="sec"><h3>Faccine, simboli, numeri e lettere</h3><div class="tiles" id="icons"></div></div>
+          <div class="sec"><h3>Animazioni</h3><div class="tiles" id="anims"></div></div>
+        </div>
+        <div class="col">
+          <div class="sec"><h3>Disegna</h3><div class="draw" id="draw"></div></div>
+          <button class="b" id="clear">Cancella</button>
+        </div>
+      </div>
+
+      <div class="page" id="page-imp">
+        <div class="sec"><h3>Velocità massima</h3><div class="seg" id="opt-speed"></div></div>
+        <div class="sec"><h3>Volume del robot</h3><div class="seg" id="opt-vol"></div></div>
+        <div class="sec"><h3>Sensibilità sterzo</h3><div class="seg" id="opt-sens"></div></div>
+        <div class="sec"><h3>Levetta del gas</h3><div class="seg" id="opt-hand"></div></div>
+        <div class="sec"><h3>Sterzo</h3><div class="seg" id="opt-steer"></div></div>
+        <div class="sec"><h3>Luminosità fari</h3><div class="seg" id="opt-lum"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- crediti: in basso a sinistra, solo nelle impostazioni -->
+  <p class="credits">Luca Mazzola e Claudio Ceppi · SUPSI, BA Visual Communication · Carattere LL Autoscape di Lineto</p>
+
+  <!-- in basso: messaggi e avvisi -->
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+</div>
+
+<!-- telefono in verticale -->
+<div class="rotate" aria-live="polite">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" aria-hidden="true">
+    <rect x="3" y="7" width="18" height="10" rx="2.5"/><path d="M19.5 4.5a6 6 0 0 0-5-2.5"/><path d="M16.5 4.5h3v-3"/>
+  </svg>
+  Gira il telefono
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const app = $('app'), btBtn = $('bt'), statusEl = $('status'), letterEl = $('letter');
+
+/* piccola memoria del browser (può non esserci: in quel caso si ignora) */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+/* impostazioni salvate */
+const opt = Object.assign({ speed: 100, vol: 130, sens: 1, hand: 'dx', invert: false, lum: 100 }, store.get('opzioni', {}));
+function saveOpt() { store.set('opzioni', opt); }
+function applyHand() { app.classList.toggle('mancino', opt.hand === 'sx'); }
+applyHand();
+
+/* =========================================================
+   RIGA IN BASSO: avvisi fissi (browser) e messaggi brevi
+   ========================================================= */
+const ua = navigator.userAgent;
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(ua);
+let baseNote = '';
+if (!navigator.bluetooth) {
+  if (isIOS)          baseNote = 'Su iPhone e iPad apri questa pagina con l\'app Bluefy';
+  else if (isAndroid) baseNote = 'Su Android apri questa pagina con Google Chrome o Microsoft Edge';
+  else                baseNote = 'Per il Bluetooth usa Google Chrome o Microsoft Edge';
+}
+statusEl.textContent = baseNote;
+
+let toastTimer;
+function toast(t, ms = 1800) {
+  statusEl.textContent = t;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { statusEl.textContent = baseNote; }, ms);
+}
+
+/* =========================================================
+   LETTERA DEL GIOCATORE: la manda il robot (riga GIOCATORE nel suo programma)
+   ========================================================= */
+function setLetter(l) {
+  letterEl.textContent = l;
+  letterEl.setAttribute('aria-label', 'Giocatore ' + l);
+  store.set('lettera', l);
+}
+setLetter(store.get('lettera', 'A'));
+
+let idTimer = null;
+function letterFromOrder(name) {
+  const list = store.get('robots', []);
+  if (!list.includes(name)) { list.push(name); store.set('robots', list); }
+  return String.fromCharCode(65 + (list.indexOf(name) % 26));
+}
+
+/* =========================================================
+   BLUETOOTH (servizio UART della micro:bit)
+   ========================================================= */
+const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+let device = null, rxChar = null, connecting = false;
+let busy = false, pending = null;
+const textQueue = [];
+
+function setState(s) {
+  app.dataset.bt = s;
+  btBtn.setAttribute('aria-label', s === 'on' ? 'Scollega Bluetooth' : 'Collega Bluetooth');
+}
+
+async function connect() {
+  if (!navigator.bluetooth) { toast(baseNote, 3500); return; }
+  if (rxChar) { disconnect(); return; }
+  if (connecting) return;
+  connecting = true;
+  setState('wait');
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'BBC micro:bit' }],
+      optionalServices: [UART_SERVICE]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
+    const chars   = await service.getCharacteristics();
+    rxChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+    if (!rxChar) throw new Error('UART non trovato');
+    const txChar = chars.find(c => c.properties.indicate || c.properties.notify);
+    if (txChar) {
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', onRobotData);
+    }
+    setState('on');
+    toast('Collegato');
+    send(0, 0, true);
+    sendText('CIAO#');                 // chiede la lettera del giocatore
+    sendText(`VOL:${opt.vol}#`);       // manda volume e luminosità salvati
+    sendText(`LUM:${opt.lum}#`);
+    const name = device.name || device.id;
+    clearTimeout(idTimer);
+    idTimer = setTimeout(() => setLetter(letterFromOrder(name)), 1500);
+  } catch (e) {
+    setState('off');
+    if (e.name !== 'NotFoundError') toast('Errore Bluetooth', 2500);
+    console.warn(e);
+  } finally {
+    connecting = false;
+  }
+}
+
+function disconnect() {
+  send(0, 0, true);
+  setTimeout(() => { if (device && device.gatt.connected) device.gatt.disconnect(); }, 150);
+}
+
+function onDisconnected() {
+  rxChar = null;
+  setState('off');
+  app.classList.remove('has-dist');
+  toast('Scollegato');
+}
+
+/* messaggi che arrivano DAL robot */
+let incoming = '';
+function onRobotData(e) {
+  incoming += new TextDecoder().decode(e.target.value);
+  let i;
+  while ((i = incoming.indexOf('#')) >= 0) {
+    const msg = incoming.slice(0, i).trim();
+    incoming = incoming.slice(i + 1);
+    let m;
+    if ((m = /^ID:([A-Za-z0-9])$/.exec(msg))) { clearTimeout(idTimer); setLetter(m[1].toUpperCase()); }
+    else if ((m = /^D:(\d+)$/.exec(msg))) showDistance(+m[1]);
+  }
+}
+function showDistance(cm) {
+  app.classList.add('has-dist');
+  const ok = cm > 0 && cm < 400;
+  $('distVal').textContent = ok ? `${cm} cm` : 'Libero';
+  $('dist').classList.toggle('near', ok && cm < 15);
+}
+
+/* velocità "sinistro,destro#": spedite quando cambiano o ogni 200 ms mentre si muove */
+let lastMsg = '', lastSendTime = 0;
+function send(l, r, force = false) {
+  const msg = `${l},${r}#`;
+  const now = performance.now();
+  const moving = l !== 0 || r !== 0;
+  if (!force && msg === lastMsg && !(moving && now - lastSendTime > 200)) return;
+  lastMsg = msg; lastSendTime = now;
+  pending = msg;
+  pump();
+}
+
+/* comandi di testo: hanno la precedenza */
+function sendText(t, quiet = false) {
+  if (!rxChar) { if (!quiet) toast('Collega prima il robot'); return; }
+  textQueue.push(t);
+  pump();
+}
+
+async function pump() {
+  if (busy || !rxChar) return;
+  let msg;
+  if (textQueue.length) msg = textQueue.shift();
+  else if (pending) { msg = pending; pending = null; }
+  else return;
+  busy = true;
+  try {
+    const data = new TextEncoder().encode(msg);
+    if (rxChar.properties.writeWithoutResponse) await rxChar.writeValueWithoutResponse(data);
+    else await rxChar.writeValue(data);
+  } catch (e) {
+    console.warn('Errore invio', e);
+  }
+  busy = false;
+  if (pending || textQueue.length) pump();
+}
+
+btBtn.addEventListener('click', connect);
+
+/* =========================================================
+   PANNELLO REGOLAZIONI
+   ========================================================= */
+const setBtn = $('set');
+function openPanel(open) {
+  app.classList.toggle('panel-open', open);
+  setBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  setBtn.setAttribute('aria-label', open ? 'Torna alle levette' : 'Regolazioni');
+  if (open) stopAll();
+}
+setBtn.addEventListener('click', () => openPanel(!app.classList.contains('panel-open')));
+letterEl.addEventListener('click', () => openPanel(false));      // toccando la lettera si torna alle levette
+
+document.querySelectorAll('.tabs .b').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tabs .b').forEach(x => x.classList.toggle('sel', x === t));
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('sel', p.id === 'page-' + t.dataset.tab));
+    app.classList.toggle('tab-imp', t.dataset.tab === 'imp');
+  });
+});
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function selectOnly(group, btn) { group.forEach(x => x.classList.toggle('sel', x === btn)); }
+
+/* ---------- FARI ---------- */
+// in ordine cromatico (giro dei colori), poi bianco, spento e colore libero
+const COLORS = [
+  ['Rosso', 255, 0, 0],     ['Arancio', 255, 80, 0],  ['Giallo', 255, 200, 0],
+  ['Lime', 140, 255, 0],    ['Verde', 0, 255, 0],     ['Acqua', 0, 255, 160],
+  ['Azzurro', 0, 190, 255], ['Blu', 0, 0, 255],       ['Viola', 140, 0, 255],
+  ['Magenta', 255, 0, 220], ['Rosa', 255, 20, 120],   ['Bianco', 255, 255, 255],
+  ['Spento', 0, 0, 0]
+];
+const colorButtons = [];
+COLORS.forEach(([name, r, g, b]) => {
+  const s = el('button', 'sw' + (name === 'Spento' ? ' dark' : ''));
+  s.style.background = `rgb(${r},${g},${b})`;
+  s.setAttribute('aria-label', name);
+  s.title = name;
+  if (name === 'Bianco') s.classList.add('sel');
+  s.addEventListener('click', () => { selectOnly(colorButtons, s); sendText(`COL:${r},${g},${b}#`); });
+  colorButtons.push(s);
+  $('colors').appendChild(s);
+});
+const custom = el('label', 'sw custom');
+custom.title = 'Colore libero';
+custom.setAttribute('aria-label', 'Colore libero');
+const picker = el('input');
+picker.type = 'color'; picker.value = '#ff1478';
+picker.addEventListener('input', () => {
+  const v = picker.value;
+  const r = parseInt(v.slice(1, 3), 16), g = parseInt(v.slice(3, 5), 16), b = parseInt(v.slice(5, 7), 16);
+  selectOnly(colorButtons, custom);
+  clearTimeout(picker._t);
+  picker._t = setTimeout(() => sendText(`COL:${r},${g},${b}#`), 120);
+});
+custom.appendChild(picker);
+colorButtons.push(custom);
+$('colors').appendChild(custom);
+
+// 12 effetti: i primi 6 usano il colore scelto, gli altri hanno colori propri
+const EFFECTS = ['Fisso', 'Respiro', 'Lampeggia', 'Battito', 'Ping pong', 'Frecce',
+                 'Arcobaleno', 'Disco', 'Polizia', 'Semaforo', 'Candela', 'Strobo'];
+const effectButtons = [];
+EFFECTS.forEach((name, i) => {
+  const p = el('button', 'b' + (i === 0 ? ' sel' : ''), name);
+  p.addEventListener('click', () => { selectOnly(effectButtons, p); sendText(`LUC:${i}#`); });
+  effectButtons.push(p);
+  $('effects').appendChild(p);
+});
+// scegliendo un colore, gli effetti con colori propri tornano a "Fisso" (come fa il robot)
+colorButtons.forEach(c => c.addEventListener('click', () => {
+  const cur = effectButtons.findIndex(b => b.classList.contains('sel'));
+  if (cur > 5) selectOnly(effectButtons, effectButtons[0]);
+}));
+
+/* ---------- MUSICA ---------- */
+const SONGS  = ['Tanti auguri', 'Fra Martino', 'Alla gioia', 'Stellina', 'Jingle bells', 'Bella ciao',
+                'Korobeiniki', 'La cucaracha', 'The saints', 'Fattoria', 'London', 'Little lamb',
+                'Oh Susanna', 'Yankee', 'Row row row', 'Bingo', 'Itsy bitsy', 'Hot buns'];
+const SOUNDS = ['Vittoria', 'Game over', 'Moneta', 'Salto', 'Laser', 'Power up',
+                'Errore', 'Campanello', 'Sirena', 'Allarme', 'Clacson'];
+const musicButtons = [];
+function musicButton(name, n, parent) {
+  const p = el('button', 'b', name);
+  p.addEventListener('click', () => {
+    sendText(`MUS:${n}#`);
+    selectOnly(musicButtons, n === 0 ? null : p);
+    clearTimeout(p._t);
+    if (n) p._t = setTimeout(() => p.classList.remove('sel'), 6000);
+  });
+  musicButtons.push(p);
+  parent.appendChild(p);
+}
+SONGS.forEach((name, i) => musicButton(name, i + 1, $('songs')));
+SOUNDS.forEach((name, i) => musicButton(name, i + 19, $('sounds')));
+musicButton('Stop', 0, $('sounds'));
+
+/* ---------- DISPLAY (le 25 lucine del robot) ---------- */
+const ICONS = [
+  // faccine
+  ['Felice','00000 01010 00000 10001 01110'], ['Triste','00000 01010 00000 01110 10001'],
+  ['Sorpresa','01010 00000 00100 01010 00100'], ['Arrabbiato','10001 01010 00000 11111 10101'],
+  ['Occhiolino','00000 11010 00000 10001 01110'], ['Risata','01010 00000 11111 10001 01110'],
+  ['Confuso','00000 01010 00000 01010 10101'], ['Addormentato','00000 11011 00000 01110 00000'],
+  ['Linguaccia','10001 00000 11111 00011 00011'], ['Favoloso','11111 11011 00000 01010 01110'],
+  ['Così così','11011 00000 00010 00100 01000'], ['Occhiali','00000 11111 11011 00000 01110'],
+  ['Pianto','01010 00000 01010 01110 10001'], ['Wow','01010 00000 01110 01010 01110'],
+  // simboli
+  ['Cuore','01010 11111 11111 01110 00100'], ['Cuoricino','00000 01010 01110 00100 00000'],
+  ['Stella','00100 11111 01110 01010 10001'], ['Sì','00000 00001 00010 10100 01000'],
+  ['No','10001 01010 00100 01010 10001'], ['Più','00000 00100 01110 00100 00000'],
+  ['Meno','00000 00000 01110 00000 00000'], ['Play','01000 01100 01110 01100 01000'],
+  ['Pausa','11011 11011 11011 11011 11011'], ['Rombo','00100 01010 10001 01010 00100'],
+  ['Bersaglio','00100 01110 11011 01110 00100'], ['Nota','00100 00100 00100 11100 11100'],
+  ['Note','00100 00110 00101 11100 11100'], ['Fantasma','11111 10101 11111 11111 10101'],
+  ['Alieno','10001 01110 10101 01110 10001'], ['Teschio','01110 10101 11111 01110 01110'],
+  // natura e cibo
+  ['Sole','10101 01110 11111 01110 10101'], ['Luna','01110 11100 11000 11100 01110'],
+  ['Fulmine','00110 01100 11111 00110 01100'], ['Goccia','00100 01110 11111 11111 01110'],
+  ['Ombrello','01110 11111 00100 10100 01100'], ['Albero','00100 01110 11111 00100 00100'],
+  ['Fiore','01010 11111 01010 00100 00100'], ['Fungo','01110 11111 11111 00100 01110'],
+  ['Mela','00010 01100 11111 11111 01110'], ['Ciliegie','00110 01010 10001 11011 11011'],
+  ['Gelato','01110 11111 01110 01110 00100'],
+  // animali
+  ['Gatto','10001 11111 10101 11111 01110'], ['Coniglio','10100 10100 11110 11010 11110'],
+  ['Mucca','10001 10001 11111 01110 00100'], ['Anatra','01100 11100 01111 01110 00000'],
+  ['Tartaruga','00000 01110 11111 01010 00000'], ['Pesce','00000 01101 11110 01101 00000'],
+  ['Farfalla','11011 11111 00100 11111 11011'],
+  // oggetti
+  ['Casa','00100 01110 11111 01110 01010'], ['Razzo','00100 01110 01110 11111 10101'],
+  ['Aereo','00100 10110 11111 10110 00100'], ['Macchina','00000 01110 11111 11111 01010'],
+  ['Barca','00100 00110 00100 11111 01110'], ['Chiave','01110 01010 01110 00100 00110'],
+  ['Lucchetto','01110 01010 11111 11011 11111'], ['Regalo','01010 00100 11111 10101 11111'],
+  ['Corona','10101 10101 11111 11111 00000'], ['Spada','00100 00100 00100 01110 00100'],
+  // frecce
+  ['Su','00100 01110 10101 00100 00100'], ['Giù','00100 00100 10101 01110 00100'],
+  ['Sinistra','00100 01000 11111 01000 00100'], ['Destra','00100 00010 11111 00010 00100']
+];
+// lettere dell'alfabeto
+const LETTERS = {
+  A:'01100 10010 11110 10010 10010', B:'11100 10010 11100 10010 11100', C:'01110 10000 10000 10000 01110',
+  D:'11100 10010 10010 10010 11100', E:'11110 10000 11100 10000 11110', F:'11110 10000 11100 10000 10000',
+  G:'01110 10000 10110 10010 01100', H:'10010 10010 11110 10010 10010', I:'11100 01000 01000 01000 11100',
+  J:'11110 00010 00010 10010 01100', K:'10010 10100 11000 10100 10010', L:'10000 10000 10000 10000 11110',
+  M:'10001 11011 10101 10001 10001', N:'10001 11001 10101 10011 10001', O:'01100 10010 10010 10010 01100',
+  P:'11100 10010 11100 10000 10000', Q:'01100 10010 10010 01100 00011', R:'11100 10010 11100 10100 10010',
+  S:'01110 10000 01100 00010 11100', T:'11111 00100 00100 00100 00100', U:'10010 10010 10010 10010 01100',
+  V:'10001 10001 10001 01010 00100', W:'10001 10001 10101 11011 10001', X:'10010 10010 01100 10010 10010',
+  Y:'10001 01010 00100 00100 00100', Z:'11110 00100 01000 10000 11110'
+};
+// numeri e animazioni: generati insieme al programma del robot, così sono identici
+const ANIMS = [
+  {"name":"Fuochi","ms":150,"frames":[4096,469440,33080895,0]},
+  {"name":"Cuore","ms":350,"frames":[4685802,145728]},
+  {"name":"Onda","ms":120,"frames":[33518352,33553288,33553860,33537250,33004641,33262624,33408000,33481216]},
+  {"name":"Spirale","ms":50,"frames":[1,3,7,15,31,543,16927,541215,17318431,25707039,29901343,31998495,33047071,33079839,33080863,33080895,33080959,33081087,33081343,33089535,33351679,33482751,33548287,33550335,33554431,33554430,33554428,33554424,33554416,33554400,33553888,33537504,33013216,16236000,7847392,3653088,1555936,507360,474592,473568,473536,473472,473344,473088,464896,202752,71680,6144,4096,0]},
+  {"name":"Pioggia","ms":110,"frames":[21563657,18948385,2368548,8684692,9474706,1200706,4868168]},
+  {"name":"Saluto","ms":500,"frames":[15237440,15237472]},
+  {"name":"Esultanza","ms":300,"frames":[10638788,10621397]},
+  {"name":"Ping pong","ms":110,"frames":[1024,64,4,256,16384,262144,4194304,65536]},
+  {"name":"Radar","ms":130,"frames":[4329604,1118480,31744,17043521]},
+  {"name":"Scacchiera","ms":350,"frames":[11184810,22369621]},
+  {"name":"Serpente","ms":90,"frames":[33825,1059,39,15,30,540,16920,541200,17318400,25706496,29884416,31457280,15728640,7372800,3179520,1082400]},
+  {"name":"Stelline","ms":180,"frames":[1049736,262673,1048632,3670048,1050896,1065984,548,16793600]},
+  {"name":"Bocca","ms":220,"frames":[15703918,15728494]},
+  {"name":"Conto alla rovescia","ms":600,"frames":[6590735,15767815,14815428,15237440]},
+  {"name":"Equalizzatore","ms":140,"frames":[33012040,33535140,33549634,33545889,33536328,32979076]},
+  {"name":"Freccia","ms":90,"frames":[1024,35872,1121345,2243714,4488452,8944136,16805904,24576,16384,0]},
+  {"name":"Scintille","ms":120,"frames":[4096,469440,22037525,0,0]},
+  {"name":"Cuore che cresce","ms":250,"frames":[4096,145728,4685802,4685802,0]},
+  {"name":"Mangione","ms":160,"frames":[10240,43040,109664,240864,473536,930688,811776,541184,0]},
+  {"name":"Mattoncini","ms":90,"frames":[1,32,1024,32768,1048576,1048592,1049088,1064960,1572864,17825792,17825796,17825920,17829888,17956864,22020096,22020098,22020160,22022144,22085632,24117248,24117256,24117504,24125440,24379392,32505856,32505856,0]},
+  {"name":"Rimbalzo","ms":110,"frames":[4,4,128,4096,4194304,4096,128,4]},
+  {"name":"Battito","ms":90,"frames":[7440,16780424,8406084,4218914,2633729,1333248,158720,95232,63488,31744,31744,15872]},
+  {"name":"Orologio","ms":120,"frames":[4100,4104,4112,4608,20480,528384,16781312,8392704,4198400,2101248,1052672,36864,5120,4128,4097,4098]},
+  {"name":"Caricamento","ms":200,"frames":[0,32505856,33521664,33553408,33554400,33554431]},
+  {"name":"Vortice","ms":90,"frames":[266304,135296,69888,14336,266304,135296,69888,14336]},
+  {"name":"Ballo","ms":250,"frames":[18175428,19222981,18175428,9770452]},
+  {"name":"Neve","ms":220,"frames":[4720897,16850976,2360324,8421520,1053186,147528]},
+  {"name":"Ciao","ms":110,"frames":[0,541184,17047824,25301144,29427804,14713902,7340039,19922963,26755609,29630748,14815374,24726087,11855155,5402777,19495500,9747750,4873859,19213649,26383544,13191756,6595878,3281027,1116225,33824,0]},
+  {"name":"Occhi","ms":350,"frames":[28512,9504,28512,19008]},
+  {"name":"Flash","ms":120,"frames":[33554431,0,33554431,0,0,0]},
+  {"name":"Tunnel","ms":140,"frames":[33080895,469440,4096,0]},
+  {"name":"Strisce","ms":120,"frames":[4507785,19015236,10031410]},
+  {"name":"Fuoco","ms":120,"frames":[32970880,32977152,33011844,32970816,33009792]},
+  {"name":"Fontana","ms":110,"frames":[4194304,4325376,4329472,4329600,4329792,4335616,4751360,17825792]},
+  {"name":"Pendolo","ms":130,"frames":[1092,67716,135300,270468,16644,270468,135300,67716]},
+  {"name":"Evviva","ms":100,"frames":[0,17318416,25452824,29520028,31537246,15768623,7360023,3679499,18092165,9046082,4539953,2269448,1135252,567626,17044645,9046082,4539953,2269448,17895572,25741914,29631805,14815374,7424599,3712299,18092165,9046082,4539953,2269448,18436740,8710482,4355257,19495500,9747750,4332675,2165825,1082400,0]},
+  {"name":"Cuori su","ms":140,"frames":[5251988,7504156,2331656,72864,20973797,30015559,9326594,291456]},
+  {"name":"Matrix","ms":90,"frames":[8473237,2708133,19551397,21664936,22189320,5415170,5513298,8653396]},
+  {"name":"Fisarmonica","ms":150,"frames":[4329604,14825614,32668831,14825614]},
+  {"name":"Diamante","ms":140,"frames":[4096,141440,4539716,141440]},
+  {"name":"Girandola","ms":120,"frames":[25432131,4357252,3215640,18157905]},
+  {"name":"Scala","ms":180,"frames":[0,1048576,3211264,7540736,16199936,33518352]},
+  {"name":"Umore","ms":500,"frames":[15237440,18284864]},
+  {"name":"Attesa","ms":250,"frames":[0,1024,5120,21504]},
+  {"name":"Lampo","ms":100,"frames":[0,0,6716620,0,6716620,6716620,6716620,0,0,0]},
+  {"name":"Dado","ms":180,"frames":[4096,17825809,17843217,16777217,17829905,16781313,17843217,4096,17825809]},
+  {"name":"Sbadiglio","ms":300,"frames":[459072,15139136,15022944,459616]},
+  {"name":"Mare","ms":120,"frames":[32968704,32737280,32605184,32538624,32505856,33030144,33308672,33431552]}
+];
+const DIGITS = [6595878, 14815428, 15767815, 6590735, 9413964, 16268351, 15251592, 1118495, 15252014, 2243118];
+
+function maskOf(rows) {
+  const bits = rows.replace(/\s+/g, '');
+  let m = 0;
+  for (let i = 0; i < 25; i++) if (bits[i] === '1') m += 2 ** i;
+  return m;
+}
+function paint(tile, mask) {
+  [...tile.children].forEach((d, i) => d.classList.toggle('on', !!((mask >> i) & 1)));
+}
+function makeTile(mask, name) {
+  const t = el('button', 'tile');
+  for (let i = 0; i < 25; i++) t.appendChild(el('i'));
+  paint(t, mask);
+  t.setAttribute('aria-label', name); t.title = name;
+  return t;
+}
+
+const tiles = [];
+function activate(t) { selectOnly(tiles, t); }
+
+ICONS.forEach(([name, rows]) => {
+  const mask = maskOf(rows);
+  const t = makeTile(mask, name);
+  t.addEventListener('click', () => { sendText(`PIX:${mask}#`); activate(t); });
+  tiles.push(t); $('icons').appendChild(t);
+});
+DIGITS.forEach((mask, n) => {
+  const t = makeTile(mask, 'Numero ' + n);
+  t.addEventListener('click', () => { sendText(`PIX:${mask}#`); activate(t); });
+  tiles.push(t); $('icons').appendChild(t);
+});
+Object.entries(LETTERS).forEach(([ch, rows]) => {
+  const mask = maskOf(rows);
+  const t = makeTile(mask, 'Lettera ' + ch);
+  t.addEventListener('click', () => { sendText(`PIX:${mask}#`); activate(t); });
+  tiles.push(t); $('icons').appendChild(t);
+});
+ANIMS.forEach((a, i) => {
+  const t = makeTile(a.frames[0], a.name);
+  let f = 0;
+  setInterval(() => {                         // anteprima animata
+    if (!app.classList.contains('panel-open')) return;
+    f = (f + 1) % a.frames.length;
+    paint(t, a.frames[f]);
+  }, Math.max(a.ms, 90));
+  t.addEventListener('click', () => { sendText(`ANI:${i + 1}#`); activate(t); });
+  tiles.push(t); $('anims').appendChild(t);
+});
+
+// strisce: due righe che scorrono di lato; sfumatura a destra se c'è dell'altro da vedere
+function setupStrip(el) {
+  const cols = () => {
+    const rows = parseInt(getComputedStyle(el).getPropertyValue('--rows')) || 2;
+    el.style.gridTemplateColumns = `repeat(${Math.ceil(el.children.length / rows)}, var(--tile))`;
+  };
+  const upd = () => { cols(); el.classList.toggle('more', el.scrollLeft + el.clientWidth < el.scrollWidth - 2); };
+  el.addEventListener('scroll', upd, { passive: true });
+  el.addEventListener('wheel', e => {               // rotella del mouse = scorrimento di lato
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { el.scrollLeft += e.deltaY; e.preventDefault(); }
+  }, { passive: false });
+  new ResizeObserver(upd).observe(el);
+  upd();
+}
+setupStrip($('icons'));
+setupStrip($('anims'));
+
+// griglia per disegnare: ogni tocco accende/spegne una lucina e la manda al robot
+const cells = [];
+for (let i = 0; i < 25; i++) {
+  const c = el('button', 'cell');
+  c.setAttribute('aria-label', `Lucina ${i % 5 + 1}, riga ${Math.floor(i / 5) + 1}`);
+  c.addEventListener('click', () => { c.classList.toggle('on'); sendDrawing(); });
+  cells.push(c); $('draw').appendChild(c);
+}
+function drawingMask() { return cells.reduce((m, c, i) => m + (c.classList.contains('on') ? 2 ** i : 0), 0); }
+let drawTimer;
+function sendDrawing() {
+  activate(null);
+  clearTimeout(drawTimer);
+  drawTimer = setTimeout(() => sendText(`PIX:${drawingMask()}#`), 120);
+}
+$('clear').addEventListener('click', () => { cells.forEach(c => c.classList.remove('on')); sendDrawing(); });
+
+/* ---------- IMPOSTAZIONI ---------- */
+function optionRow(parentId, choices, key, onPick) {
+  const btns = [];
+  choices.forEach(([label, value]) => {
+    const p = el('button', 'b' + (opt[key] === value ? ' sel' : ''), label);
+    p.addEventListener('click', () => { opt[key] = value; saveOpt(); selectOnly(btns, p); if (onPick) onPick(value); });
+    btns.push(p); $(parentId).appendChild(p);
+  });
+}
+optionRow('opt-speed', [['Bassa', 50], ['Media', 75], ['Alta', 100]], 'speed');
+optionRow('opt-vol',   [['Muto', 0], ['Basso', 50], ['Medio', 130], ['Alto', 255]], 'vol', v => sendText(`VOL:${v}#`, true));
+optionRow('opt-sens',  [['Dolce', 0], ['Normale', 1], ['Forte', 2]], 'sens');
+optionRow('opt-hand',  [['A sinistra', 'dx'], ['A destra', 'sx']], 'hand', () => { stopAll(); applyHand(); });
+optionRow('opt-steer', [['Normale', false], ['Invertito', true]], 'invert');
+optionRow('opt-lum',   [['Bassa', 30], ['Media', 60], ['Alta', 100]], 'lum', v => sendText(`LUM:${v}#`, true));
+
+/* =========================================================
+   LE DUE LEVETTE A PILLOLA
+   gas: solo su/giù   ·   sterzo: solo sinistra/destra
+   ========================================================= */
+function makeStick(zoneId, trackId, knobId, asse) {
+  const zone = $(zoneId), track = $(trackId), knob = $(knobId);
+  const s = { v: 0, id: null };
+  const travel = () => Math.abs(track.clientHeight - track.clientWidth) / 2;
+  s.draw = () => {
+    const t = travel();
+    const dx = asse === 'x' ? s.v * t : 0;
+    const dy = asse === 'y' ? -s.v * t : 0;
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  };
+  const move = e => {
+    const r = track.getBoundingClientRect();
+    const t = travel();
+    const v = asse === 'x'
+      ?  (e.clientX - (r.left + r.width / 2)) / t
+      : -(e.clientY - (r.top + r.height / 2)) / t;
+    s.v = Math.max(-1, Math.min(1, v));
+    s.draw();
+  };
+  s.reset = () => { s.id = null; s.v = 0; knob.classList.remove('drag'); s.draw(); };
+  zone.addEventListener('pointerdown', e => {
+    if (s.id !== null) return;
+    e.preventDefault();
+    s.id = e.pointerId;
+    zone.setPointerCapture(e.pointerId);
+    knob.classList.add('drag');
+    move(e);
+  });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === s.id) move(e); });
+  const end = e => { if (e.pointerId === s.id) s.reset(); };
+  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointercancel', end);
+  return s;
+}
+const gas    = makeStick('zoneGas', 'trackGas', 'knobGas', 'y');
+const sterzo = makeStick('zoneSte', 'trackSte', 'knobSte', 'x');
+
+/* =========================================================
+   TASTIERA (PC)
+   W/S o frecce su/giù = gas · A/D o frecce sinistra/destra = sterzo
+   R regolazioni · B Bluetooth · Spazio stop · Esc chiude
+   ========================================================= */
+const keys = { up: false, down: false, left: false, right: false };
+const keyMap = { ArrowUp:'up', KeyW:'up', ArrowDown:'down', KeyS:'down',
+                 ArrowLeft:'left', KeyA:'left', ArrowRight:'right', KeyD:'right' };
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); stopAll(); return; }
+  if (e.code === 'Escape') { openPanel(false); return; }
+  if (e.repeat) { if (keyMap[e.code]) e.preventDefault(); return; }
+  if (e.code === 'KeyB') { connect(); return; }
+  if (e.code === 'KeyR') { openPanel(!app.classList.contains('panel-open')); return; }
+  const k = keyMap[e.code];
+  if (k && !app.classList.contains('panel-open')) { e.preventDefault(); keys[k] = true; }
+});
+document.addEventListener('keyup', e => {
+  const k = keyMap[e.code];
+  if (k) { e.preventDefault(); keys[k] = false; }
+});
+
+function stopAll() {
+  for (const k in keys) keys[k] = false;
+  gas.reset(); sterzo.reset();
+  send(0, 0, true);
+}
+window.addEventListener('blur', stopAll);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopAll(); });
+window.addEventListener('orientationchange', stopAll);
+
+/* =========================================================
+   GUIDA
+   GAS:    distanza dal centro = velocità, su = avanti, giù = indietro
+   STERZO: distanza dal centro = quanto curva
+   - gas senza sterzo        -> dritto, le due ruote identiche
+   - gas + un po' di sterzo  -> curva morbida (la ruota interna rallenta)
+   - gas + sterzo a fondo    -> curva stretta (la ruota interna si ferma)
+   - solo sterzo, gas fermo  -> gira su se stesso
+   ========================================================= */
+const DEAD    = 0.10;
+const FULL    = 0.95;
+const MIN_PWR = 20;      // potenza minima (%) perché i motori si muovano davvero
+
+function curva(v) {
+  const a = Math.abs(v);
+  if (a < DEAD) return 0;
+  return Math.sign(v) * Math.min(1, (a - DEAD) / (FULL - DEAD));
+}
+function sensibilita(s) {           // dolce: sterza meno · forte: sterza prima
+  if (opt.sens === 0) return s * 0.6;
+  if (opt.sens === 2) return Math.sign(s) * Math.sqrt(Math.abs(s));
+  return s;
+}
+function power(v) {                 // da -1..1 a percentuale, con la velocità massima scelta
+  if (Math.abs(v) < 0.01) return 0;
+  const p = MIN_PWR + (100 - MIN_PWR) * Math.min(1, Math.abs(v));
+  return Math.sign(v) * Math.round(p * opt.speed / 100);
+}
+function computeSpeeds() {
+  let t = curva(gas.v);
+  let s = sensibilita(curva(sterzo.v));
+  if (t === 0 && s === 0) {
+    t = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+    s = ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * (t !== 0 ? 0.5 : 1);
+  }
+  let l, r;
+  if (t === 0) { l = s; r = -s; }
+  else {
+    const interna = t * (1 - Math.abs(s));
+    if (s < 0) { l = interna; r = t; }
+    else       { l = t; r = interna; }
+  }
+  if (opt.invert) [l, r] = [r, l];
+  return { l: power(l), r: power(r) };
+}
+
+setInterval(() => {
+  if (app.classList.contains('panel-open')) return;
+  const { l, r } = computeSpeeds();
+  send(l, r);
+}, 50);
+
+// niente zoom/gesti di sistema su iPhone e iPad
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+window.addEventListener('resize', () => { gas.draw(); sterzo.draw(); });
+</script>
+</body>
+</html>
