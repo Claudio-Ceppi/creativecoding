@@ -340,7 +340,14 @@ const $ = id => document.getElementById(id);
 /* misure reali dello schermo visibile (Safari, schermata Home, Bluefy, Android, PC) */
 function fitViewport() {
   const vv = window.visualViewport;
-  const w = Math.round(vv ? vv.width : innerWidth), h = Math.round(vv ? vv.height : innerHeight);
+  let w = Math.round(vv ? vv.width : innerWidth), h = Math.round(vv ? vv.height : innerHeight);
+  // aperta dalla schermata Home dell'iPhone: l'iPhone dà un'altezza più corta di quella vera
+  // (toglie lo spazio della barra di stato) e restava una striscia vuota. Lì l'app occupa
+  // tutto lo schermo, quindi usiamo le misure dello schermo intero.
+  if (navigator.standalone === true && screen.width && screen.height) {
+    const corto = Math.min(screen.width, screen.height), lungo = Math.max(screen.width, screen.height);
+    if (w <= h) { w = corto; h = lungo; } else { w = lungo; h = corto; }
+  }
   document.documentElement.style.setProperty('--vw', w + 'px');
   document.documentElement.style.setProperty('--vh', h + 'px');
 }
