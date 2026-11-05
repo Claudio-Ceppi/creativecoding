@@ -12,6 +12,14 @@ const GIOCATORE = "A"
 
 const ROBOT = 0x30
 
+// >>> CURVA: quanto stringe la curva mentre il robot va avanti o indietro <<<
+//     1 = come arriva dal telefono · 2 = curva molto più stretta · 3 = quasi sul posto
+let CURVA = 2
+// >>> LIMITE: mentre si va avanti curvando, la ruota interna può girare all'indietro
+//     al massimo a questa frazione della ruota esterna (0.5 = metà). Così il robot
+//     curva stretto ma continua ad andare avanti, senza girare su se stesso. <<<
+let LIMITE = 0.5
+
 let connesso = false
 let ultimoComando = 0
 let inMovimento = false
@@ -319,6 +327,21 @@ bluetooth.onUartDataReceived(serial.delimiters(Delimiters.Hash), function () {
     if (parti.length == 2) {
         let sx = Math.constrain(parseInt(parti[0]), -100, 100)
         let dx = Math.constrain(parseInt(parti[1]), -100, 100)
+        // curva più stretta: se le ruote vanno nello stesso verso ma a velocità diverse,
+        // la ruota interna viene rallentata ancora di più (e può anche girare all'indietro)
+        if (CURVA != 1 && sx != dx && sx * dx >= 0) {
+            if (Math.abs(sx) > Math.abs(dx)) {
+                dx = Math.constrain(Math.round(sx - (sx - dx) * CURVA), -100, 100)
+                if (dx * sx < 0 && Math.abs(dx) > Math.abs(sx) * LIMITE) {
+                    dx = -Math.round(sx * LIMITE)
+                }
+            } else {
+                sx = Math.constrain(Math.round(dx - (dx - sx) * CURVA), -100, 100)
+                if (sx * dx < 0 && Math.abs(sx) > Math.abs(dx) * LIMITE) {
+                    sx = -Math.round(dx * LIMITE)
+                }
+            }
+        }
         impostaMotori(sx, dx)
         ultimoSx = sx
         ultimoDx = dx

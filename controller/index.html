@@ -908,17 +908,13 @@ function curva(v) {      // posizione della levetta (-1..1) senza la zona morta
 function expo(v, k) { return Math.sign(v) * Math.pow(Math.abs(v), k); }
 
 function sensibilita(s) {           // quanto sterza a parità di posizione della levetta
-  if (opt.sens === 0) return expo(s, 2.0) * 0.85;  // soft
-  if (opt.sens === 2) return expo(s, 1.2);         // sharp
-  return expo(s, 1.5);                             // normal
+  if (opt.sens === 0) return expo(s, 2.4) * 0.55;  // soft: più dolce di normal
+  if (opt.sens === 2) return expo(s, 1.6) * 0.95;  // sharp: più deciso di normal
+  return expo(s, 2.0) * 0.72;                      // normal (la vecchia "soft", quella giusta)
 }
-// quanto rallenta la ruota interna in curva: oltre 1 la ruota interna arriva a girare all'indietro
-// (curva molto stretta, quasi sul posto, anche andando avanti)
-function strettezza() {
-  if (opt.sens === 0) return 1.0;    // soft: in fondo la ruota interna si ferma
-  if (opt.sens === 2) return 1.8;    // sharp: la ruota interna va quasi tutta indietro
-  return 1.4;                        // normal
-}
+// la ruota interna rallenta fino a fermarsi (mai di più): il robot curva ma va sempre avanti.
+// Il programma del robot poi stringe la curva (CURVA) senza mai farlo girare su se stesso (LIMITE).
+function strettezza() { return 1.0; }
 function power(v) {                 // da -1..1 a percentuale, con la velocità massima scelta
   if (Math.abs(v) < 0.01) return 0;
   const p = MIN_PWR + (100 - MIN_PWR) * Math.min(1, Math.abs(v));
@@ -932,15 +928,20 @@ function computeSpeeds() {
     s = ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * (t !== 0 ? 0.4 : 1);
   }
   let l, r;
-  if (t === 0) { l = s * SPIN; r = -s * SPIN; }     // gira su se stesso
-  else {
-    let interna = t * (1 - strettezza() * Math.abs(s));   // la ruota interna rallenta (e può invertire)
-    if (Math.abs(interna) < 0.1 * Math.abs(t)) interna = 0;  // quasi ferma = ferma: curva più netta
-    if (s < 0) { l = interna; r = t; }
-    else       { l = t; r = interna; }
+  if (t === 0) {                            // solo sterzo: gira su se stesso
+    l = power(s * SPIN); r = power(-s * SPIN);
+  } else {
+    // in curva la ruota interna va a una FRAZIONE della ruota esterna: così la curva
+    // è la stessa a qualsiasi velocità (piano o veloce) e il robot va sempre avanti
+    const esterna = power(t);
+    let quota = 1 - strettezza() * Math.abs(s);
+    if (quota < 0.1) quota = 0;             // quasi ferma = ferma: curva più netta
+    const interna = Math.round(esterna * quota);
+    if (s < 0) { l = interna; r = esterna; }
+    else       { l = esterna; r = interna; }
   }
   if (opt.invert) [l, r] = [r, l];
-  return { l: power(l), r: power(r) };
+  return { l, r };
 }
 
 setInterval(() => {
