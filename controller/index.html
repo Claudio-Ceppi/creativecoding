@@ -225,15 +225,14 @@
   .seg .b{padding:0 8px}
   .seg{display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0, 1fr); gap:var(--g)}
   .credits{
-    display:none; position:absolute; left:calc(var(--ex) + var(--c)); bottom:max(var(--c), var(--sb));
-    margin:0; max-width:calc(100% - 2 * var(--c)); font-size:var(--fs); line-height:1.1;
+    /* una riga sola, allineata a sinistra con i pulsanti delle impostazioni,
+       distante dal fondo quanto i pulsanti tondi lo sono dall'alto */
+    display:none; position:absolute;
+    left:calc(var(--side-l) + max(0px, (100cqw - var(--side-l) - var(--side-r) - 960px) / 2));
+    bottom:calc(var(--st) + var(--m));
+    margin:0; white-space:nowrap; font-size:var(--fs); line-height:1;
   }
   .credits .sep{display:inline-block; margin:0 .7em}
-  /* se la riga non ci sta, i crediti vanno uno sotto l'altro, sempre in basso a sinistra */
-  @container (max-width: 1100px){
-    .credits .part{display:block}
-    .credits .sep{display:none}
-  }
   .app.panel-open.tab-imp .credits{display:block}
   .app.panel-open.tab-imp .status{display:none}
 
@@ -328,7 +327,7 @@
   </div>
 
   <!-- crediti: in basso a sinistra, solo nelle impostazioni -->
-  <p class="credits"><span class="part">Designed by Luca Mazzola &amp; Claudio Ceppi</span><span class="sep">|</span><span class="part">SUPSI, BA Visual Communication</span><span class="sep">|</span><span class="part">Typeface Autoscape</span></p>
+  <p class="credits"><span class="part">Designed by Luca Mazzola &amp; Claudio Ceppi</span><span class="sep">|</span><span class="part">SUPSI</span><span class="sep">|</span><span class="part">Typeface Autoscape</span></p>
 
   <!-- in basso: messaggi e avvisi -->
   <p class="status" id="status" role="status" aria-live="polite"></p>
