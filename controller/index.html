@@ -908,9 +908,16 @@ function curva(v) {      // posizione della levetta (-1..1) senza la zona morta
 function expo(v, k) { return Math.sign(v) * Math.pow(Math.abs(v), k); }
 
 function sensibilita(s) {           // quanto sterza a parità di posizione della levetta
-  if (opt.sens === 0) return expo(s, 2.6) * 0.6;   // soft
-  if (opt.sens === 2) return expo(s, 1.6) * 0.95;  // sharp
-  return expo(s, 2.2) * 0.8;                       // normal
+  if (opt.sens === 0) return expo(s, 2.0) * 0.85;  // soft
+  if (opt.sens === 2) return expo(s, 1.2);         // sharp
+  return expo(s, 1.5);                             // normal
+}
+// quanto rallenta la ruota interna in curva: oltre 1 la ruota interna arriva a girare all'indietro
+// (curva molto stretta, quasi sul posto, anche andando avanti)
+function strettezza() {
+  if (opt.sens === 0) return 1.0;    // soft: in fondo la ruota interna si ferma
+  if (opt.sens === 2) return 1.8;    // sharp: la ruota interna va quasi tutta indietro
+  return 1.4;                        // normal
 }
 function power(v) {                 // da -1..1 a percentuale, con la velocità massima scelta
   if (Math.abs(v) < 0.01) return 0;
@@ -927,7 +934,8 @@ function computeSpeeds() {
   let l, r;
   if (t === 0) { l = s * SPIN; r = -s * SPIN; }     // gira su se stesso
   else {
-    const interna = t * (1 - Math.abs(s));          // la ruota interna rallenta
+    let interna = t * (1 - strettezza() * Math.abs(s));   // la ruota interna rallenta (e può invertire)
+    if (Math.abs(interna) < 0.1 * Math.abs(t)) interna = 0;  // quasi ferma = ferma: curva più netta
     if (s < 0) { l = interna; r = t; }
     else       { l = t; r = interna; }
   }
